@@ -5,7 +5,10 @@ import random
 import logging
 import time
 import threading
+import requests
+import os
 from flask import Flask, request
+from datetime import datetime
 
 # Токен от @BotFather
 TOKEN = "7325353221:AAEta0uc1hlRSOEDiIsvYkBwbgza7Y-oPlM"
@@ -13,21 +16,119 @@ TOKEN = "7325353221:AAEta0uc1hlRSOEDiIsvYkBwbgza7Y-oPlM"
 # Flask приложение для keep-alive
 app_web = Flask(__name__)
 
+# Счетчик активности
+activity_counter = 0
+last_activity = time.time()
+
 @app_web.route('/')
 def home():
-    return "Bot is running! 🚀"
+    global activity_counter, last_activity
+    activity_counter += 1
+    last_activity = time.time()
+    return f"""
+    <html>
+    <head><title>German Words Bot</title></head>
+    <body>
+        <h1>🇩🇪 German Words Bot is running! 🚀</h1>
+        <p>Activity counter: {activity_counter}</p>
+        <p>Last activity: {datetime.fromtimestamp(last_activity).strftime('%H:%M:%S')}</p>
+        <p>Uptime: {int(time.time() - start_time)} seconds</p>
+        <p><a href="/ping">Ping</a> | <a href="/health">Health</a> | <a href="/stats">Stats</a></p>
+    </body>
+    </html>
+    """
 
 @app_web.route('/ping')
 def ping():
-    return "pong"
+    global activity_counter, last_activity
+    activity_counter += 1
+    last_activity = time.time()
+    return f"pong - {activity_counter}"
 
 @app_web.route('/health')
 def health():
-    return {"status": "healthy", "timestamp": time.time()}
+    global activity_counter, last_activity
+    activity_counter += 1
+    last_activity = time.time()
+    return {
+        "status": "healthy", 
+        "timestamp": time.time(),
+        "activity_count": activity_counter,
+        "uptime": int(time.time() - start_time),
+        "active_chats": len(active_chats) if 'active_chats' in globals() else 0
+    }
+
+@app_web.route('/stats')
+def stats():
+    global activity_counter, last_activity
+    activity_counter += 1
+    last_activity = time.time()
+    return f"""
+    <html>
+    <head><title>Bot Statistics</title></head>
+    <body>
+        <h1>📊 Bot Statistics</h1>
+        <p>Activity counter: {activity_counter}</p>
+        <p>Last activity: {datetime.fromtimestamp(last_activity).strftime('%H:%M:%S')}</p>
+        <p>Uptime: {int(time.time() - start_time)} seconds</p>
+        <p>Active chats: {len(active_chats) if 'active_chats' in globals() else 0}</p>
+        <p>Total words: {len(GERMAN_WORDS)}</p>
+    </body>
+    </html>
+    """
 
 # Функция для запуска веб-сервера
 def run_web_server():
     app_web.run(host='0.0.0.0', port=8080, debug=False)
+
+# Функция для внешнего пинга (самопинг)
+def self_ping():
+    """Пингует сам себя для поддержания активности"""
+    try:
+        # Получаем URL Replit из переменной окружения
+        repl_url = os.environ.get('REPLIT_DB_URL', '')
+        if not repl_url:
+            # Если нет URL, пингуем локально
+            response = requests.get('http://localhost:8080/ping', timeout=5)
+            print(f"🔄 Self-ping: {response.status_code}")
+        else:
+            # Пингуем внешний URL
+            base_url = repl_url.replace('https://kv.replit.com', '').replace('https://', '').split('.')[0]
+            external_url = f"https://{base_url}.repl.co/ping"
+            response = requests.get(external_url, timeout=5)
+            print(f"🌐 External ping: {response.status_code}")
+    except Exception as e:
+        print(f"❌ Ping error: {e}")
+
+# Функция для создания активности
+def create_activity():
+    """Создает различную активность для предотвращения сна"""
+    global activity_counter, last_activity
+    activity_counter += 1
+    last_activity = time.time()
+    
+    # Создаем файл активности
+    try:
+        with open('activity.log', 'a') as f:
+            f.write(f"{datetime.now()}: Activity {activity_counter}\n")
+    except:
+        pass
+    
+    # Пингуем себя
+    self_ping()
+    
+    print(f"⚡ Activity created: {activity_counter} at {datetime.now().strftime('%H:%M:%S')}")
+
+# Функция для запуска активности в отдельном потоке
+def activity_worker():
+    """Рабочий поток для создания активности"""
+    while True:
+        try:
+            create_activity()
+            time.sleep(30)  # Каждые 30 секунд
+        except Exception as e:
+            print(f"Activity worker error: {e}")
+            time.sleep(60)
 
 # База слов: немецкое слово → русский перевод
 GERMAN_WORDS = [
@@ -3726,20 +3827,49 @@ async def send_words_periodically(context: ContextTypes.DEFAULT_TYPE):
 # Функция для поддержания активности (keep-alive)
 async def keep_alive_task(context: ContextTypes.DEFAULT_TYPE):
     """Периодическая задача для поддержания активности бота"""
-    print(f"🔄 Keep-alive: {time.strftime('%H:%M:%S')}")
+    global activity_counter, last_activity
+    activity_counter += 1
+    last_activity = time.time()
+    
+    # Создаем активность
+    create_activity()
+    
+    print(f"🔄 Keep-alive: {time.strftime('%H:%M:%S')} - Activity: {activity_counter}")
+
+# Дополнительная задача для частого пинга
+async def frequent_ping_task(context: ContextTypes.DEFAULT_TYPE):
+    """Частый пинг для максимальной активности"""
+    global activity_counter, last_activity
+    activity_counter += 1
+    last_activity = time.time()
+    
+    # Пингуем себя
+    self_ping()
+    
+    print(f"⚡ Frequent ping: {time.strftime('%H:%M:%S')} - Activity: {activity_counter}")
 
 # Основная функция
 def main():
+    global start_time
+    start_time = time.time()
+    
     # Настройка логирования
     logging.basicConfig(
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         level=logging.INFO
     )
     
+    print("🚀 Запуск бота с максимальной защитой от сна...")
+    
     # Запускаем веб-сервер в отдельном потоке
     web_thread = threading.Thread(target=run_web_server, daemon=True)
     web_thread.start()
     print("🌐 Веб-сервер запущен на порту 8080")
+    
+    # Запускаем поток активности
+    activity_thread = threading.Thread(target=activity_worker, daemon=True)
+    activity_thread.start()
+    print("⚡ Поток активности запущен")
     
     # Создаём приложение
     app = Application.builder().token(TOKEN).build()
@@ -3759,15 +3889,28 @@ def main():
         first=160
     )
     
-    # Запускаем keep-alive задачу каждые 5 минут
+    # Запускаем keep-alive задачу каждые 2 минуты
     app.job_queue.run_repeating(
         keep_alive_task,
-        interval=300,  # 5 минут
-        first=60
+        interval=120,  # 2 минуты
+        first=30
+    )
+    
+    # Запускаем частый пинг каждые 30 секунд
+    app.job_queue.run_repeating(
+        frequent_ping_task,
+        interval=30,  # 30 секунд
+        first=15
     )
 
-    print("✅ Бот запущен. Ожидаем /start...")
+    print("✅ Бот запущен с максимальной защитой от сна!")
     print("🔗 Веб-интерфейс доступен по адресу: https://your-repl-url.repl.co")
+    print("📊 Статистика: https://your-repl-url.repl.co/stats")
+    print("🏥 Health check: https://your-repl-url.repl.co/health")
+    print("⚡ Активность создается каждые 30 секунд")
+    print("🔄 Keep-alive каждые 2 минуты")
+    print("🌐 Внешний пинг каждые 30 секунд")
+    
     app.run_polling()
 
 if __name__ == "__main__":
