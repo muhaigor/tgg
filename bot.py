@@ -3,9 +3,31 @@ from telegram.ext import Application, CommandHandler, ContextTypes, CallbackQuer
 import asyncio
 import random
 import logging
+import time
+import threading
+from flask import Flask, request
 
 # Токен от @BotFather
 TOKEN = "7325353221:AAEta0uc1hlRSOEDiIsvYkBwbgza7Y-oPlM"
+
+# Flask приложение для keep-alive
+app_web = Flask(__name__)
+
+@app_web.route('/')
+def home():
+    return "Bot is running! 🚀"
+
+@app_web.route('/ping')
+def ping():
+    return "pong"
+
+@app_web.route('/health')
+def health():
+    return {"status": "healthy", "timestamp": time.time()}
+
+# Функция для запуска веб-сервера
+def run_web_server():
+    app_web.run(host='0.0.0.0', port=8080, debug=False)
 
 # База слов: немецкое слово → русский перевод
 GERMAN_WORDS = [
@@ -3701,6 +3723,11 @@ async def send_words_periodically(context: ContextTypes.DEFAULT_TYPE):
                 # Удаляем чат из активных, если не удалось отправить сообщение
                 active_chats.discard(chat_id)
 
+# Функция для поддержания активности (keep-alive)
+async def keep_alive_task(context: ContextTypes.DEFAULT_TYPE):
+    """Периодическая задача для поддержания активности бота"""
+    print(f"🔄 Keep-alive: {time.strftime('%H:%M:%S')}")
+
 # Основная функция
 def main():
     # Настройка логирования
@@ -3708,6 +3735,11 @@ def main():
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         level=logging.INFO
     )
+    
+    # Запускаем веб-сервер в отдельном потоке
+    web_thread = threading.Thread(target=run_web_server, daemon=True)
+    web_thread.start()
+    print("🌐 Веб-сервер запущен на порту 8080")
     
     # Создаём приложение
     app = Application.builder().token(TOKEN).build()
@@ -3726,8 +3758,16 @@ def main():
         interval=160,  # 2 минуты 40 секунд
         first=160
     )
+    
+    # Запускаем keep-alive задачу каждые 5 минут
+    app.job_queue.run_repeating(
+        keep_alive_task,
+        interval=300,  # 5 минут
+        first=60
+    )
 
     print("✅ Бот запущен. Ожидаем /start...")
+    print("🔗 Веб-интерфейс доступен по адресу: https://your-repl-url.repl.co")
     app.run_polling()
 
 if __name__ == "__main__":
