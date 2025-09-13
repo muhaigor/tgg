@@ -1,0 +1,2 @@
+run = "python tgg/bot.py"
+modules = ["python-3.11"]
